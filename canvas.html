@@ -1,0 +1,952 @@
+<html><head>
+</head><body dir="ltr">
+<canvas width="500" onclick="click(event);" onkeypress="keyPress(event);" id="screen" height="500"> 
+  This application requires a HTML5 compliant browser.
+</canvas>
+
+<script type="text/javascript">
+
+function sigmoid(netinput, response){
+  return 1.0 / (1.0 + Math.exp(-netinput / response));
+}
+
+
+function neuron(numInputs){
+  this.weights = new Array();
+  for (var i = 0; i < numInputs + 1; i++) 
+  {
+	this.weights.push(Math.random() * 2.0 - 1.0);
+  }
+}
+
+function neuronLayer(numNeurons, numInputs){
+  this.neurons = new Array();
+  for (var i = 0; i < numNeurons; i++) this.neurons.push(new neuron(numInputs));
+}
+
+function neuralNetwork(numInputs, numOutputs, numHiddenLayers, numPerHiddenLayer, bias, activationResponse){
+  this.numInputs = numInputs;
+  this.numOutputs = numOutputs;
+  this.numHiddenLayers = numHiddenLayers;
+  this.numPerHiddenLayer = numPerHiddenLayer;
+  this.bias = bias;
+  this.activationResponse = activationResponse;
+  this.layers = new Array();
+  if (numHiddenLayers){
+    this.layers.push(new neuronLayer(numPerHiddenLayer, numInputs));
+    for (var i = 0; i < numHiddenLayers - 1; i++) this.layers.push(new neuronLayer(numPerHiddenLayer, numPerHiddenLayer));
+    this.layers.push(new neuronLayer(numOutputs, numPerHiddenLayer));
+  }
+  else{
+    this.layers.push(new neuronLayer(numOutputs, numInputs));
+  }
+  
+  this.getWeights = function(){
+    var weights = new Array();
+    for (var i in this.layers){  
+      for (var j in this.layers[i].neurons){
+        for (var k in this.layers[i].neurons[j].weights){
+          weights.push(this.layers[i].neurons[j].weights[k]);
+        }
+      }
+    }
+    return weights;
+  }
+  
+  this.setWeights = function(weights){
+    var w = 0;
+    for (var i in this.layers){  
+      for (var j in this.layers[i].neurons){
+        for (var k in this.layers[i].neurons[j].weights){
+          this.layers[i].neurons[j].weights[k] = weights[w];
+          w++;
+        }
+      }
+    }
+    return this;
+  }
+  
+  this.getNumWeights = function(){
+    var total = 0;
+    for (var i in this.layers){  
+      for (var j in this.layers[i].neurons){
+        for (var k in this.layers[i].neurons[j].weights){
+          total++;
+        }
+      }
+    }
+    return total;
+  }
+  
+  this.update = function(inputs){
+    var outputs = new Array();
+    if (inputs.length != this.numInputs){
+      alert("Error: The given number of update inputs does not match the nueral networks number.");
+    }
+    else{
+      for (var i = 0; i < this.layers.length; i++){
+        if (i > 0){
+          inputs = outputs;
+          outputs = new Array();
+        }
+        for (var j in this.layers[i].neurons){
+          var netInput = 0.0;
+          for (var k = 0; k < this.layers[i].neurons[j].weights.length - 1; k++){
+            netInput += this.layers[i].neurons[j].weights[k] * inputs[k];
+          }
+          netInput += this.layers[i].neurons[j].weights[this.layers[i].neurons[j].weights.length - 1] * this.bias;
+          outputs.push(sigmoid(netInput, this.activationResponse));
+        }
+      }
+    }
+    return outputs;
+  }
+}
+
+
+function vector2d(x, y){
+  this.x = x
+  this.y = y
+  
+  this.add = function(other){
+    return new vector2d(this.x + other.x, this.y + other.y);
+  }
+  
+  this.sub = function(other){
+    return new vector2d(this.x - other.x, this.y - other.y);
+  }
+  
+  this.scale = function(scale){
+    return new vector2d(this.x * scale, this.y * scale);
+  }
+  
+  this.length = function(){
+    return Math.sqrt(this.dot(this));
+  }
+  
+  this.angle = function(other){
+    return Math.acos(this.dot(other) / (this.length() * other.length()));
+  }
+  
+  this.setAngleVector = function(len, angle){
+    this.x = -len * Math.sin(angle);
+    this.y = len * Math.cos(angle);
+    return this;
+  }
+  
+  this.dot = function(other){
+    return this.x * other.x + this.y * other.y;
+  }
+  
+  this.normalize = function(){
+    var l = this.length()
+    return new vector2d(this.x / l, this.y / l);
+  }
+  
+  this.clone = function(){
+    return new vector2d(this.x, this.y);
+  }
+  
+  this.distanceSquared = function(other){
+    var xlen = this.x - other.x;
+    var ylen = this.y - other.y;
+    return xlen * xlen + ylen * ylen;
+  }
+  
+  this.toString = function(){
+    return "(" + this.x + ", " + this.y + ")";
+  }
+
+}
+
+function vector2dCompareX(vector2dA, vector2dB){
+  return vector2dA.x - vector2dB.x;
+}
+
+function vector2dCompareY(vector2dA, vector2dB){
+  return vector2dA.y - vector2dB.y;
+}
+
+
+
+function kdtree(points){
+  this.create = function(pointList, depth){
+    if (!pointList.length) return null;
+    if (depth % 2) pointList.sort(vector2dCompareX);
+    else pointList.sort(vector2dCompareY);
+    var mid = Math.floor(pointList.length / 2);
+    var node = new Object();
+    node.value = pointList[mid];
+    node.left = this.create(pointList.slice(0, mid), depth + 1);
+    node.right = this.create(pointList.slice(mid + 1), depth + 1);
+    return node;
+  }
+  
+  this.insertHelper = function(point, node, depth){
+    if (!Boolean(node)){
+      var node = new Object();
+      node.left = null;
+      node.right = null;
+      node.value = point;
+    }
+    else{
+      var dim = depth % 2 ? "x" : "y";
+      if (node.value[dim] > point[dim]) node.left = this.insertHelper(point, node.left, depth + 1);
+      else node.right = this.insertHelper(point, node.right, depth + 1);
+    }
+    return node;
+  }
+  
+  this.insert = function(point){
+    this.length++;
+    this.root = this.insertHelper(point, this.root, 0);
+    return this;
+  }
+  
+  this.insertList = function(points){
+    for (var i in points) this.insert(points[i]);
+    return this;
+  }
+  
+  this.containsHelper = function(point, node, depth){
+    if (!Boolean(node)) return false;
+    var dim = depth % 2 ? "x" : "y";
+    if ((node.value.x == point.x) && (node.value.y == point.y)) return true;
+    if (node.value[dim] > point[dim]) return this.containsHelper(point, node.left, depth + 1);
+    else if (node.value[dim] < point[dim]) return this.containsHelper(point, node.right, depth + 1);
+    else{
+      if(this.containsHelper(point, node.left, depth + 1)) return true;
+      if(this.containsHelper(point, node.right, depth + 1)) return true;
+      return false;
+    }
+  }
+  
+  this.contains = function(point){
+    return this.containsHelper(point, this.root, 0);
+  }
+
+  this.nearestNeighborHelper = function(point, node, depth, best, bestDist){
+    if (!Boolean(node)) return [best, bestDist];
+    var dim = depth % 2 ? "x" : "y";
+    if (!Boolean(best)){
+      best = node.value;
+      bestDist = node.value.distanceSquared(point);
+    }
+    else{
+      var hereDist = node.value.distanceSquared(point);
+      if (hereDist < bestDist){
+        bestDist = hereDist;
+        best = node.value;
+      }
+    }
+          
+    if (node.value[dim] > point[dim]) var ret = this.nearestNeighborHelper(point, node.left, depth + 1, best, bestDist);
+    else var ret = this.nearestNeighborHelper(point, node.right, depth + 1, best, bestDist);
+    best = ret[0];
+    bestDist = ret[1];
+    
+    if (bestDist > (node.value[dim] - point[dim]) * (node.value[dim] - point[dim])){
+      if (node.value[dim] > point[dim]) var ret = this.nearestNeighborHelper(point, node.right, depth + 1, best, bestDist);
+      else var ret = this.nearestNeighborHelper(point, node.left, depth + 1, best, bestDist);
+    }
+    
+    return ret;
+  }  
+  
+  this.nearestNeighbor = function(point){
+    return this.nearestNeighborHelper(point, this.root, 0, null, 10000000000);
+  }
+  
+  this.findminHelper = function(node, descrim, depth){
+    var temp1 = null;
+    var temp2 = null;
+    if (!Boolean(node)) return null;
+    temp1 = this.findminHelper(node.left, descrim, depth + 1);
+    var dim = descrim % 2 ? "x" : "y";
+    if ((descrim % 2) != (depth % 2)){
+      temp2 = this.findminHelper(node.right, descrim, depth + 1);
+      if (!Boolean(temp1) || Boolean(temp2) && (temp1[dim] > temp2[dim])) temp1 = temp2;
+    }
+    if (!Boolean(temp1) || (temp1[dim] > node.value[dim])) return node.value;
+    else return temp1;
+  }
+  
+//    this.removeHelper = function(node, point, depth){
+//      var dim = depth % 2 ? "x" : "y";
+//      if (!Boolean(node)) return null;
+//      else if (point[dim] < node.value[dim]) node.left = this.removeHelper(node.left, point, depth + 1);
+//      else if (point[dim] > node.value[dim]) node.right = this.removeHelper(node.right, point, depth + 1);
+//      else{ // Found the point.
+//        if (!Boolean(node.right)){
+//          if (!Boolean(node.left)) return null; // Leaf node, so drop.
+//          else{
+//            node.right = node.left;
+//            node.left = null;
+//          }
+//        }
+//        var temp = this.findminHelper(node.right, depth, depth + 1);
+//        node.right = this.removeHelper(node.right, temp, depth + 1);
+//        node.value = temp;
+//      }
+//      return node;
+//    }
+
+   this.removeHelper = function(node, point, depth){
+     if (!Boolean(node)) return null;
+     var dim = depth % 2 ? "x" : "y";
+    if ((node.value.x == point.x) && (node.value.y == point.y)){
+      if (!Boolean(node.right)){
+         if (!Boolean(node.left)) return null; // Leaf node, so drop.
+         else{
+           node.right = node.left;
+           node.left = null;
+         }
+       }
+       var temp = this.findminHelper(node.right, depth, depth + 1);
+       node.right = this.removeHelper(node.right, temp, depth + 1);
+       node.value = temp;
+    }
+    if (node.value[dim] > point[dim]) node.left = this.removeHelper(node.left, point, depth + 1);
+    else if (node.value[dim] < point[dim]) node.right = this.removeHelper(node.right, point, depth + 1);
+    else{
+      if(this.containsHelper(point, node.left, depth + 1)) node.left = this.removeHelper(node.left, point, depth + 1);
+      if(this.containsHelper(point, node.right, depth + 1)) node.right = this.removeHelper(node.right, point, depth + 1);
+    }
+     return node;
+   }
+
+  this.remove = function(point){
+    this.length--;
+    this.root = this.removeHelper(this.root, point, 0);
+    return this;
+  }
+   
+   this.inorderHelper = function(node, depth){
+     if (Boolean(node)){
+       this.inorderHelper(node.left, depth + 1);
+       for (var i = 0; i < depth; i++) document.write("---");
+       document.write(" " + node.value + "<br>");
+       this.inorderHelper(node.right, depth + 1);
+     }
+   }
+   
+   this.inorder = function(){
+     this.inorderHelper(this.root, 0);
+     return this;
+   }
+   
+   this.preorderHelper = function(node, meth, args){
+     if (Boolean(node)){
+       node.value[meth](args);
+       this.preorderHelper(node.left, meth, args);
+       this.preorderHelper(node.right, meth, args);
+     }
+   }
+   
+   this.preorder = function(meth, args){
+    this.preorderHelper(this.root, meth, args);
+    return this;
+   }
+   
+   this.length = points.length;
+  this.root = this.create(points, 0);
+}
+ 
+var regenerateFood = true;
+var screenWidth = 500;
+var screenHeight = 500;
+var waterMaskPtrn = null;
+var waterPtrn = null;
+var intervalId = null;
+var genTime = 2000;
+var fastMode = false;
+var generation = 0;
+var totalFitness = 0;
+var maxFitness = 0;
+var minFitness = 0;
+var dataHistory = new Array();
+var numPlankton = 100;
+var numFish = 30;
+var fishes = new Array();
+var plankton = new kdtree([]);
+var foodImg = new Image();
+    
+function plankter(){
+  this.draw = function(ctx){
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    //ctx.drawImage(foodImg, 8 * this.type, 0, 8, 8, -2, -2, 4, 4);
+    ctx.fillStyle = "green";
+    ctx.beginPath();  
+    ctx.arc(0, 0, 2, 0, 2*Math.PI, true);
+    ctx.fill();
+    ctx.restore();
+  }
+  
+  this.erase = function(ctx){
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.fillStyle = "white";  
+    ctx.fillRect(-3,-3,6,6);
+    ctx.restore();
+  }
+  
+  this.inheritFrom = vector2d;
+    this.inheritFrom(Math.floor(Math.random() * screenWidth), Math.floor(Math.random() * screenHeight));
+    this.type = Math.floor(Math.random() * 4);
+}
+ 
+function clamp(value, maximum, minimum){
+  if (value > maximum) return maximum;
+  else if (value < minimum) return minimum;
+  else return value; 
+}
+ 
+    
+function fish(){
+  this.fitness = 0;
+  this.position = new vector2d(Math.random() * screenWidth, Math.random() * screenHeight);
+  this.rotation = Math.random() * 2.0 * Math.PI;
+  this.look = new vector2d(0, 0);
+  this.look.setAngleVector(1.0, this.rotation); 
+  this.speed = Math.random() * 2.0;
+  this.brain = new neuralNetwork(4, 2, 1, 6, -1.0, 1.0);
+  this.turn = 0;
+  this.color = Math.random();
+  this.dead = false;
+  this.features = {horn_len : 15,
+				   body_size : 10};
+  
+  this.draw = function(ctx){
+    if (this.dead) return;
+    ctx.save();
+    ctx.translate(this.position.x, this.position.y);
+    ctx.scale(1 + this.fitness / 10, 1 + this.fitness / 10);
+	//ctx.scale(2,2);
+    ctx.rotate(this.rotation);
+    var colour = Math.floor(this.color * 510);
+    if (colour - 255 > 0){
+      style = (colour-255) > 0xF ? "#" + (colour-255).toString(16) + "0000" : "#0" + (colour-255).toString(16) + "0000";
+    }
+    else{
+       style = (255-colour) > 0xF ? "#0000" + (255-colour).toString(16) : "#00000" + (255-colour).toString(16);    
+    }
+    ctx.fillStyle = style;
+    // Draw body.
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI, false);
+    ctx.lineTo(0, -16);
+    ctx.lineTo(4, 0);
+    ctx.fill();
+    // Draw eyes.
+    ctx.fillStyle = "black";
+    ctx.beginPath();
+    ctx.arc(1.75, 0.5, 0.75, 0, 2*Math.PI, false);
+    ctx.arc(-1.75, 0.5, 0.75, 0, 2*Math.PI, false);
+    ctx.fill();
+    // Horn
+    ctx.save();
+    ctx.strokeStyle = style;
+    //ctx.translate(3.5, 0);
+    ctx.rotate(-1 * this.turn);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, this.features.horn_len);
+	/*ctx.moveTo(0, 0);
+	ctx.lineTo(5, 10);
+	ctx.moveTo(0, 0);
+	ctx.lineTo(-5, 10);
+	ctx.moveTo(0, 0);
+	ctx.lineTo(10, 10);
+	ctx.moveTo(0, 0);
+	ctx.lineTo(-10, 10);*/
+    ctx.stroke();
+    ctx.restore();
+    // Draw left fin.
+    ctx.save();
+    ctx.strokeStyle = style;
+    ctx.translate(3.5, 0);
+    ctx.rotate(-1 * this.turn);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -14.5);
+    ctx.stroke();
+    ctx.restore();
+    // Draw right fin.
+    ctx.save();
+    ctx.strokeStyle = style;
+    ctx.translate(-3.5, 0);
+    ctx.rotate(-1 * this.turn);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -14.5);
+    ctx.stroke();
+    ctx.restore();
+    // Draw tail
+    ctx.save();
+    ctx.translate(0, -15);
+    ctx.rotate(this.turn * -3.5 + 0.3 * this.speed * Math.sin(genTime / 2));
+    ctx.strokeStyle = style;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -5);
+    ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+  }
+  
+  this.erase = function(ctx){
+    ctx.save();
+    ctx.translate(this.position.x, this.position.y);
+    ctx.scale(1 + this.fitness / 150, 1 + this.fitness / 150);
+    ctx.rotate(this.rotation);
+    ctx.fillStyle = "white";
+    ctx.fillRect(-10, -21, 20, 26);
+    ctx.restore();
+  }
+  
+  this.isInteriorPoint = function(ctx, x, y){
+    if (this.dead) return false;
+    ctx.save();
+    ctx.translate(this.position.x, this.position.y);
+    ctx.scale(1 + this.fitness / 150, 1 + this.fitness / 150);
+    ctx.rotate(this.rotation);
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI, false);
+    ctx.lineTo(0, -16);
+    ctx.lineTo(4, 0);
+    ctx.restore();
+    return ctx.isPointInPath(x, y);
+  }
+  
+  this.closest = function(objects){
+    var minSqrDist = 10000000000;
+    var minObject = null;
+    for (var i in objects) if ((objects[i] != this) && (!objects[i].dead)){
+      var sqrDist = this.position.distanceSquared(objects[i].position);
+      if (minSqrDist > sqrDist){
+        minSqrDist = sqrDist;
+        minObject = objects[i];
+      }
+    }
+    return [minObject, minSqrDist];
+  }
+  
+  this.update = function(planktons, fishs){
+    if (this.dead) return;
+    while(true){
+      var nearestAndDist = planktons.nearestNeighbor(this.position);
+      var nearest = nearestAndDist[0];
+      if (Math.sqrt(nearestAndDist[1]) <= 2 + 4 * (1 + this.fitness / 150)){
+        this.fitness++;
+        planktons.remove(nearest);
+        if(regenerateFood) planktons.insert(new plankter());
+      }
+      else break;
+    }
+    //var nearestAndDistFish = this.closest(fishs);
+    //var closestFish = this.position.sub(nearestAndDistFish[0].position);
+    
+    var closestObject = this.position.sub(nearest).normalize();
+    //var inputs = [closestObject.x, closestObject.y, this.look.x, this.look.y, closestFish.x, closestFish.y];
+    var inputs = [closestObject.x, closestObject.y, this.look.x, this.look.y];
+    var outputs = this.brain.update(inputs);
+    this.turn = clamp(outputs[0] - outputs[1], 0.3, -0.3);
+    this.rotation += this.turn;
+    if (this.rotation > 2.0 * Math.PI) this.rotation -= 2.0 * Math.PI;
+    if (this.rotation < 0.0) this.rotation += 2.0 * Math.PI;
+    this.speed = outputs[0] + outputs[1];
+    this.look.setAngleVector(1.0, this.rotation); 
+    this.position = this.position.add(this.look.scale(this.speed));
+    if (this.position.x > screenWidth) this.position.x -= screenWidth;
+    if (this.position.x < 0) this.position.x += screenWidth;
+    if (this.position.y > screenHeight) this.position.y -= screenHeight;
+    if (this.position.y < 0) this.position.y += screenHeight;
+    
+    maxFitness = Math.max(this.fitness, maxFitness);
+    minFitness = Math.min(this.fitness, minFitness);
+  }
+  
+  this.getGenome = function(){
+    var genome = this.brain.getWeights();
+    genome.push(this.color);
+    return genome;
+  }
+}
+ 
+function compareFish(a, b){
+  return a.fitness - b.fitness;
+}
+ 
+ 
+function mutate(genome, mutationRate, maxPerturbation){
+  for (var i in genome){
+    if (Math.random() < mutationRate){
+      genome[i] += (Math.random() * 2.0 - 1.0) * maxPerturbation;
+    }
+  }
+}
+ 
+function crossover(genome1, genome2, crossoverRate){
+  if (Math.random() < crossoverRate){
+    var crossoverPoint = Math.random() * (genome1.length - 1);
+    for (var i = 0; i < crossoverPoint; i++){
+      var temp = genome1[i];
+      genome1[i] = genome2[i];
+      genome2[i] = temp;
+    }
+  }
+}
+ 
+function selectParentGenomes(parents, totalFitness){
+  var slice = Math.random() * totalFitness;
+  for (var i = 0, sum = 0; i < parents.length; i++){
+    sum += parents[i].fitness;
+    if (sum >= slice) return parents[i].getGenome();
+  }
+  return null;
+}
+ 
+function initialization(){
+  if (screenWidth > document.body.clientWidth) screenWidth = document.body.clientWidth - 15;
+  if (screenHeight > document.body.clientHeight) screenHeight = document.body.clientHeight - 15;
+  numPlankton = screenWidth * screenHeight * 0.0004;
+  numFish = screenWidth * screenHeight * 0.00012;
+  document.getElementById('screen').width = screenWidth;
+  document.getElementById('screen').height = screenHeight;
+  document.getElementById('screen').getContext('2d').fillStyle = 'white';
+  document.getElementById('screen').getContext('2d').fillRect(0,0, screenWidth, screenHeight);
+  var waterMaskImg = new Image();
+  waterMaskImg.src = tile_aqua_data;
+  waterMaskImg.onload = function(){
+    waterMaskPtrn = document.getElementById('screen').getContext('2d').createPattern(waterMaskImg,'repeat');  
+    var waterImg = new Image();
+    waterImg.src = tile_water_data;
+    waterImg.onload = function(){
+      waterPtrn = document.getElementById('screen').getContext('2d').createPattern(waterImg,'repeat');
+      for (var i = 0; i < numFish; i++) fishes.push(new fish());
+      for (var i = 0; i < numPlankton; i++) plankton.insert(new plankter());
+      intervalId = setInterval(mainLoop,20);
+    }
+  }
+}
+ 
+function nextGen(){
+  var genomes = new Array();
+  generation++;
+  totalFitness = 0;
+  for (var i in fishes) totalFitness += fishes[i].fitness;
+  fishes.sort(compareFish);
+  genomes.push(fishes[fishes.length - 1].getGenome());
+  genomes.push(fishes[fishes.length - 2].getGenome());
+  for (var i = 2; i < fishes.length; i += 2){
+    var genome1 = selectParentGenomes(fishes, totalFitness);
+    var genome2 = selectParentGenomes(fishes, totalFitness);
+    crossover(genome1, genome2, 0.7);
+    mutate(genome1, 0.1, 0.3);
+    mutate(genome2, 0.1, 0.3);
+    genomes.push(genome1);
+    genomes.push(genome2);
+  }
+  for (var i = 0; i < fishes.length; i++){
+    fishes[i].color = clamp(genomes[i].pop(), 1, 0);
+    fishes[i].brain.setWeights(genomes[i]);
+    fishes[i].fitness = 0;
+    fishes[i].dead = false;
+	fishes[i].horn_len = i+5;
+  }
+  for (var i = plankton.length; i < numPlankton; i++)  
+	plankton.insert(new plankter());
+  if (regenerateFood) 
+	dataHistory.push(totalFitness);
+  else 
+	dataHistory.push(genTime);
+}
+ 
+function averageList(numList, numPoints){
+  var all = Math.floor(numList.length / numPoints);
+  var extra = numList.length % numPoints;
+  var avgList = new Array(Math.min(numList.length, numPoints));
+  var k = 0;
+  for (var i = 0; i < numList.length;){
+    avgList[k] = 0;
+    for (var j = 0; j < all; j++){
+      avgList[k] += numList[i];
+      i++; 
+    }
+    if (k < extra){
+      avgList[k] += numList[i];
+      avgList[k] /= all + 1;
+      i++;
+    }
+    else{
+      avgList[k] /= all;
+    }
+    k++;
+  }
+  return avgList;
+}
+ 
+ 
+function graph(ctx, dataPoints, topLeftX, topLeftY, lengthX, lengthY, lineStyle){
+  var maximum = 0;
+  var minimum = 10000000;
+  for (var i in dataPoints){
+    maximum = Math.max(maximum, dataPoints[i]);
+    minimum = Math.min(minimum, dataPoints[i]);
+  }
+  if ((maximum - minimum) * -lengthY != 0){
+    ctx.save();
+    ctx.translate(topLeftX, topLeftY + lengthY);
+    ctx.strokeStyle = lineStyle;
+    ctx.beginPath();
+    ctx.moveTo(0, (dataPoints[0] - minimum) / (maximum - minimum) * -lengthY);
+    for (var i = 1; i < dataPoints.length - 1; i++){
+      ctx.lineTo((i / dataPoints.length) * lengthX, (dataPoints[i] - minimum) / (maximum - minimum) * -lengthY);
+    }
+    ctx.lineTo(lengthX, (dataPoints[dataPoints.length - 1] - minimum) / (maximum - minimum) * -lengthY);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+ 
+function generationLoop(){
+  maxFitness = 0;
+  minFitness = 100000000;
+  for (; genTime && (plankton.length > 5); genTime--){
+    for (i in fishes) fishes[i].update(plankton, fishes);
+  }
+  if (!genTime || plankton.length <= 5) nextGen();
+  var canvas = document.getElementById('screen');
+  if (canvas.getContext){
+    // use getContext to use the canvas for drawing
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0,0, screenWidth, screenHeight);
+    ctx.fillStyle = 'black';
+    ctx.fillText("Generation: " + generation, 10, 20);
+    ctx.fillText("Time: " + (2000 - genTime), 10, 40);
+    ctx.fillText("Total Collected: " + totalFitness, 10, 60);
+ 
+    graph(ctx, dataHistory.slice(Math.max(dataHistory.length - screenWidth, 0)), 0, Math.floor(screenHeight / 3) * 2, screenWidth, Math.floor(screenHeight / 3), "blue");
+    graph(ctx, averageList(dataHistory, screenWidth), 0, Math.floor(screenHeight / 3), screenWidth, Math.floor(screenHeight / 3), "red");
+    
+  }
+  genTime = 2000;
+}
+    
+function mainLoop(){
+  var canvas = document.getElementById('screen');
+  if (canvas.getContext){
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0,0, screenWidth, screenHeight);
+    maxFitness = 0;
+    minFitness = 100000000;
+    for (i in fishes) fishes[i].update(plankton, fishes);
+    plankton.preorder("draw", ctx);
+    for (i in fishes) fishes[i].draw(ctx);
+    
+    
+    ctx.fillStyle = waterPtrn;
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.translate(0, (genTime * 0.4) % 128);
+    ctx.fillRect(-128,-128, screenWidth + 128, screenHeight + 128);
+    ctx.restore();
+    
+    ctx.fillStyle = waterMaskPtrn;
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.translate((genTime * 0.4) % 94, 34);
+    ctx.fillRect(-94,-94, screenWidth + 94, screenHeight + 94);
+    ctx.restore();
+    
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    ctx.translate(94 - ((genTime  *  0.4)% 94), 0);
+    ctx.fillRect(-94,-94, screenWidth + 94, screenHeight + 94);
+    ctx.restore();
+    
+    ctx.globalAlpha = 1;
+    genTime--;
+    if (!genTime || plankton.length <= 5){
+      nextGen();
+      genTime = 2000;
+    }
+  }
+}
+ 
+function mousePos(e){
+  if (!e){
+    var e = window.event;
+  } 
+  if (e.pageX || e.pageY){
+    return new vector2d(e.pageX, e.pageY);
+  } 
+  else if (e.clientX || e.clientY){ 
+    return new vector2d(e.clientX, e.clientY);
+  } 
+}
+ 
+function click(e){
+  mouse = mousePos(e).sub(new vector2d(document.getElementById('screen').offsetLeft, document.getElementById('screen').offsetTop));
+  for (var i in fishes){
+    if (fishes[i].isInteriorPoint(document.getElementById('screen').getContext('2d'), mouse.x, mouse.y)){
+      fishes[i].dead = true;
+    }
+  }
+}
+ 
+function keyPress(e){
+  var code;
+  if (!e) var e = window.event;
+  if (e.keyCode) code = e.keyCode;
+  else if (e.which) code = e.which;
+  var character = String.fromCharCode(code);
+  if ((character == 'f') || (character == 'F')){
+    fastMode = !fastMode;
+    clearInterval(intervalId);
+    if (fastMode) intervalId = setInterval(generationLoop, 0);
+    else{
+      intervalId = setInterval(mainLoop, 20);
+      document.getElementById('screen').getContext('2d').fillStyle = 'white';
+      document.getElementById('screen').getContext('2d').fillRect(0,0, screenWidth, screenHeight);
+    }
+  }
+}
+  
+window.onkeypress = keyPress;
+
+var tile_water_data = "data:image/png;base64,\
+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\
+0r/2a/YZ3/x6g71axgNRg37OnSftP//Z";
+
+var tile_aqua_data = "data:image/png;base64,\
+/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAIBAQIBAQICAgICAgICAwUDAwMDAwYEBAMFBwYHBwcG\
+BwcICQsJCAgKCAcHCg0KCgsMDAwMBwkODw0MDgsMDAz/2wBDAQICAgMDAwYDAwYMCAcIDAwMDAwM\
+DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAz/wAARCABeAF4DAREA\
+AhEBAxEB/8QAHAAAAwEBAQEBAQAAAAAAAAAABAUGAwIBAAcJ/8QAOBAAAQMCBQMDAgMGBgMAAAAA\
+AQIDBAURAAYSITETQVEHInEUYTKBoRUjkbHR4RYkM0JS8TRi8P/EABoBAAMBAQEBAAAAAAAAAAAA\
+AAIDBAEFAAf/xAAuEQACAgEEAgAGAAYDAQAAAAABAgADEQQSITEiQQUTFDJRcSNCYYGxwTNSoZH/\
+2gAMAwEAAhEDEQA/AP6AVfL9NYlpL1QRKS0NLfRHtCb9j2O2/fH3eq+zadq4J/M+Y2KueJuuVRYV\
+NS+8qQWlEoSEAXURa4BPNgcCBczbV7mBRjM1h+p0ZIch0iAmEHUqT11Ku8rY8W43+MLfQOWD3NkC\
+MFoUYSfZDmws0SV06rSSpqVqCS6bFKwdtzvz5OD1qvSotpHU9Th+Hntd9Ln6HKQkoWEKSSne4O5v\
+x9rH88BT8QWxc9Qmo2xe36eVGewXGmFaVHT1FEJQD8njDvrUU8n+0A0lowzDSnMm02nwXEKcSn96\
+VoIPVXbYC3xbbnCqbVucv1PNUVGJszTq45lSXKYiyh1h1Fe38Ke5t2232GBa2kWBWIHM012FciIX\
+1SJ8GMyr92GUqUoquTcm1zfxi1RWGJB7iSjlfKBw6C9WJ7bMbotpbJW46b6UjuTvvhr3Ki5mCvce\
+ITX/AFFqNDS1TqXI6DTe6nI/tU+rufuPzxOukrtPzLRmE17LwkPpLyM20plqtyXhIi3UHJIJCtVt\
+r8322+2EOhqb+CBgxqtlfPueQ5kifWmo9UQiUxKWEKWRYpF9yCO/JucMdVWsmvjEVuYt5w/MPqPS\
+I9QZZNOZlUti7YbKQCgWAJSodzvhFOiu2F92GMdY6fjiS66OpGYI6oIDjMtYVHPYi4uFHtbvjobw\
+aiG+7EnAycCfoWYqJl7JlMfmxy29UQn3aXdaEKO5IAtY3OOLRdqbmFb/AG/rmWmutF3KZEwvV2sQ\
+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\
+x6havIaf/9k=";
+initialization();
+</script></body></html>
